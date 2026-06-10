@@ -182,21 +182,36 @@ class BatteryData:
 
 class PrinterStatus:
     def __init__(self, data):
-        self.printer_status = PrinterReadinessStatus(data[0])
-        self.data_length = data[1]
-        self.data_unknown = data[2]
-        self.data_unknown2 = data[3]
-        self.label_color = PaperColor(data[4])
-        self.data_unknown3 = data[5]
-        self.border_radius = data[6]
-        self.paper_type = PaperType(data[7])
-        self.data_unknown4 = data[8]
-        self.data_unknown5 = data[9]
-        self.data_unknown6 = data[10]
-        self.label_length = data[11]
-        self.maximum_label_width = data[12]
-        self.label_width = data[13]
-        self.data_unknown7 = data[14]
+        self.raw = bytes(data)
+
+        if len(self.raw) != 16:
+            raise ValueError(
+                f"Invalid printer status length: expected 16, got {len(self.raw)}"
+            )
+
+        self.payload = self.raw[:14]
+        self.checksum = self.raw[14:16]
+
+        self.printer_status = PrinterReadinessStatus(self.raw[0])
+        self.data_length = self.raw[1]
+
+        self.unknown_flags_1 = self.raw[2]
+        self.unknown_flags_2 = self.raw[3]
+
+        self.label_color = PaperColor(self.raw[4])
+
+        self.unknown_flags_3 = self.raw[5]
+
+        self.border_radius = self.raw[6]
+        self.paper_type = PaperType(self.raw[7])
+
+        self.unknown_media_flags_1 = self.raw[8]
+        self.unknown_media_flags_2 = self.raw[9]
+        self.unknown_media_flags_3 = self.raw[10]
+
+        self.label_length = self.raw[11]
+        self.maximum_label_width = self.raw[12]
+        self.label_width = self.raw[13]
 
     def __str__(self):
         text = f"{self.printer_status}\n"
@@ -211,16 +226,26 @@ class PrinterStatus:
 
         if DEBUG:
             text += (
-                f"Data Length: {self.data_length}\n"
-                f"Border Radius ?: {self.border_radius}\n"
-                f"Maximum Label Width?: {self.maximum_label_width}\n"
-                f"Data Unknown 1 (byte 3): {hex(self.data_unknown)}\n"
-                f"Data Unknown 2 (byte 4): {hex(self.data_unknown2)}\n"
-                f"Data Unknown 3 (byte 5): {hex(self.data_unknown3)}\n"
-                f"Data Unknown 4 (byte 8): {hex(self.data_unknown4)}\n"
-                f"Data Unknown 5 (byte 9): {hex(self.data_unknown5)}\n"
-                f"Data Unknown 6 (byte 10): {hex(self.data_unknown6)}\n"
-                f"Data Unknown 7 (byte 15): {hex(self.data_unknown7)}\n"
+                "\nDebug status bytes:\n"
+                f"Byte 01 / index 00 / printer_status:        0x{self.raw[0]:02x} ({self.raw[0]}) -> {self.printer_status}\n"
+                f"Byte 02 / index 01 / data_length:           0x{self.raw[1]:02x} ({self.raw[1]})\n"
+                f"Byte 03 / index 02 / unknown_flags_1:       0x{self.raw[2]:02x} ({self.raw[2]})\n"
+                f"Byte 04 / index 03 / unknown_flags_2:       0x{self.raw[3]:02x} ({self.raw[3]})\n"
+                f"Byte 05 / index 04 / label_color:           0x{self.raw[4]:02x} ({self.raw[4]}) -> {self.label_color}\n"
+                f"Byte 06 / index 05 / unknown_flags_3:       0x{self.raw[5]:02x} ({self.raw[5]})\n"
+                f"Byte 07 / index 06 / border_radius:         0x{self.raw[6]:02x} ({self.raw[6]})\n"
+                f"Byte 08 / index 07 / paper_type:            0x{self.raw[7]:02x} ({self.raw[7]}) -> {self.paper_type}\n"
+                f"Byte 09 / index 08 / unknown_media_flags_1: 0x{self.raw[8]:02x} ({self.raw[8]})\n"
+                f"Byte 10 / index 09 / unknown_media_flags_2: 0x{self.raw[9]:02x} ({self.raw[9]})\n"
+                f"Byte 11 / index 10 / unknown_media_flags_3: 0x{self.raw[10]:02x} ({self.raw[10]})\n"
+                f"Byte 12 / index 11 / label_length:          0x{self.raw[11]:02x} ({self.raw[11]}) mm\n"
+                f"Byte 13 / index 12 / maximum_label_width:   0x{self.raw[12]:02x} ({self.raw[12]}) mm\n"
+                f"Byte 14 / index 13 / label_width:           0x{self.raw[13]:02x} ({self.raw[13]}) mm\n"
+                f"Byte 15 / index 14 / crc_byte_1:            0x{self.raw[14]:02x} ({self.raw[14]})\n"
+                f"Byte 16 / index 15 / crc_byte_2:            0x{self.raw[15]:02x} ({self.raw[15]})\n"
+                f"Raw status:   {self.raw.hex()}\n"
+                f"Payload:      {self.payload.hex()}\n"
+                f"Checksum:     {self.checksum.hex()}\n"
             )
 
         return text
