@@ -1,72 +1,389 @@
-# Nelko P21 label printer script and acapture
-This is a wireshark capture of the bluetooth traffic of a Nelko P21 label printer and a resulting simple python script, that makes it possible to print labels without the offical app.
+i# Nelko P21 label printer script
+
+This repository contains a reverse-engineered Python script for the Nelko P21 Bluetooth label printer.
+
+The script can print labels and read basic printer information without using the official Nelko app.
+
+This version connects directly to the printer using a Python Bluetooth RFCOMM socket. It does **not** require:
+
+* `/dev/rfcomm0`
+* the `rfcomm` comman
+* `bluez-deprecated-tools`
+* a manually bound serial device
+
+The printer still has to be paired with the computer through Bluetooth first.
+
+## Supported platform
+
+This script is intended for Linux systems with BlueZ Bluetooth support.
+
+It was tested for a setup where Python can open Bluetooth RFCOMM sockets directly via:
+
+```python
+socket.AF_BLUETOOTH
+socket.BTPROTO_RFCOMM
+```
+
+This is especially useful on systems like Manjaro or Arch Linux, where the old `rfcomm` command may no longer be available by default.
+
+## Requirements
+
+Install the Python dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+If you do not use the repository requirements file, install the needed packages manually:
+
+```bash
+pip install pillow packaging
+```
+
+System packages usually needed on Manjaro / Arch:
+
+```bash
+sudo pacman -S bluez bluez-utils
+```
+
+Make sure Bluetooth is running:
+
+```bash
+sudo systemctl enable --now bluetooth
+```
+
+## Pair the printer
+
+Turn on the Nelko P21 printer and pair it with your computer.
+
+Start `bluetoothctl`:
+
+```bash
+bluetoothctl
+```
+
+Inside `bluetoothctl`:
+
+```text
+power on
+agent on
+default-agent
+scan on
+```
+
+Wait until the printer appears. It is usually shown as something like `P21`.
+
+Then pair and trust it:
+
+```text
+pair XX:XX:XX:XX:XX:XX
+trust XX:XX:XX:XX:XX:XX
+quit
+```
+
+Replace `XX:XX:XX:XX:XX:XX` with the Bluetooth MAC address of your printer.
+
+You can list paired devices with:
+
+```bash
+bluetoothctl devices
+```
 
 ## Script usage
 
-The printer works over a Bluetooth classic connection using the serial protocol (sometimes called SPP or RFCOMM). To establish a connection to the printer power it on and pair it using any Bluetooth connection tool. Then create an RFCOMM connection, either by using your tool of choice or by using bluez' `rfcomm` cli tool:
+The printer works over Bluetooth Classic using the SPP/RFCOMM protocol.
+
+Unlike the original version, this script does not require a serial device such as `/dev/rfcomm0`. Instead, pass the printer MAC address directly to the script:
 
 ```bash
-$ rfcomm connect /dev/rfcomm0 XX:XX:XX:XX:XX:XX
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --status
 ```
 
-Make sure to replace the `XX:XX...` part with the Bluetooth MAC of your printer. When the connection was successful, you can start the script. I recommend creating a virtual environment and installing the requirements via `pip`. The script will print a help screen on start.
+Show debug output:
 
-## The captured traffic and the printers protocol
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --status --debug
+```
 
-It contains a connection and a print of the default template on a 14x40mm label. The entire communication of the printer runs via SPP/RFCOMM aka a serial connection over Bluetooth. The printer also has an internal NFC reader to identify the the label rolls put inside. It automatically determines the format of the labels this way. It also seems to be a type of soft DRM, where the app complains, if you use third-party label rolls.
+Read battery status:
 
-The printer itself uses some proprietary commands like the following. Every command must be followed by a CRLF as is every response. 
-- `BATTERY?`  
-  Responds with: `BATTERY ` followed by two bytes. The first byte is most likely the charge level in percent.
-- `CONFIG?` 
-  Responds with: `CONFIG ` followed by something like `00cb0000030402040201`. 
-  The first byte may indicate some protocol type, in this case TSPL2 and the second to the DPI resolution of 203 (CB).
-  The next three bytes `00 00 03` corresponds to the first firmware version in the app (0.3.0).
-  The three bytes after that `04 02 04` corresponds to the second firmware version in the app (4.2.4).
-  Then comes one byte containing the timeout setting: `00` to `03` for never, 15 min, 30 min, 60 min.
-  The last byte is the status of the beep setting.
-- `BEEP` followed by a space and 0x00 or 0x01. 
-- `[ESC]!o`  
-  According to the TSPL2 documentation this cancels the pause status of the printer. The command is sent repeatedly from the app to the printer and the printer answers with a short status.
-- `[ESC]!?`
-  Seems to return the ready status for the printer.
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --battery
+```
 
-The sent printing commands correspond to parts of TSPL2:
+Read printer configuration:
 
-```plaintext
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --config
+```
+
+Run a self-test print:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --selftest
+```
+
+Print an image:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --image test-template.png
+```
+
+Print with density and copy count:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --image test-template.png --density 15 --copies 1
+```
+
+Use a different RFCOMM channel:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --bt-channel 1 --status
+```
+
+Channel `1` is the default and normally works for the Nelko P21.
+
+## Command line options
+
+```text
+--bt-address   Bluetooth MAC address of the printer. Required.
+--bt-channel   Bluetooth RFCOMM channel. Default: 1.
+--image        Image file to print.
+--density      Print density/darkness from 1 to 15. Default: 15.
+--copies       Number of copies. Default: 1.
+--status       Read printer status.
+--battery      Read battery level.
+--config       Read printer configuration.
+--timeout      Set timeout: 0, 15, 30 or 60 minutes.
+--beep         Enable or disable beep: on/off.
+--selftest     Run printer self-test.
+--debug        Show debug output.
+```
+
+## Examples
+
+### Check connection
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --status --debug
+```
+
+Expected output is something like:
+
+```text
+Printer status:
+Ready
+Label Type: 14x40mm(Gapped), White color
+```
+
+### Print the included test template
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --image test-template.png --debug
+```
+
+### Disable beep
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --beep off
+```
+
+### Enable beep
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --beep on
+```
+
+### Set timeout to 15 minutes
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --timeout 15
+```
+
+### Disable timeout
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --timeout 0
+```
+
+## Image format
+
+The Nelko P21 uses a small monochrome print area.
+
+The script converts the input image to:
+
+* grayscale
+* high contrast
+* 1-bit black/white
+* a printer-compatible bitmap
+
+The image is resized to fit the default 14x40 mm label format.
+
+For best results, use simple black-and-white images or high-contrast PNG files.
+
+## Troubleshooting
+
+### `Bluetooth socket error: [Errno 111] Connection refused`
+
+The printer is probably not paired, not trusted, already connected somewhere else, or the wrong RFCOMM channel is used.
+
+Try:
+
+```bash
+bluetoothctl
+devices
+info XX:XX:XX:XX:XX:XX
+```
+
+Then reconnect:
+
+```bash
+remove XX:XX:XX:XX:XX:XX
+scan on
+pair XX:XX:XX:XX:XX:XX
+trust XX:XX:XX:XX:XX:XX
+quit
+```
+
+### `No route to host`
+
+The printer may be off, asleep, out of range, or Bluetooth may not be running.
+
+Try:
+
+```bash
+sudo systemctl restart bluetooth
+bluetoothctl power on
+```
+
+Then turn the printer off and on again.
+
+### `Address already in use`
+
+Another process may still be connected to the printer.
+
+Close the official Nelko app on your phone and make sure no other script instance is running.
+
+### `ModuleNotFoundError: No module named 'PIL'`
+
+Install Pillow:
+
+```bash
+pip install pillow
+```
+
+### `ModuleNotFoundError: No module named 'packaging'`
+
+Install packaging:
+
+```bash
+pip install packaging
+```
+
+### The printer prints blank labels
+
+Try a higher density:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --image test-template.png --density 15
+```
+
+Also make sure the label roll is inserted correctly and the printer has detected the label type.
+
+### The script connects but receives no useful response
+
+Try debug mode:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --status --debug
+```
+
+Also check whether the printer is still connected to your phone. The printer usually accepts only one active Bluetooth connection at a time.
+
+## Protocol notes
+
+The printer communicates over Bluetooth Classic SPP/RFCOMM.
+
+The printer uses proprietary commands and a subset of TSPL2-like commands.
+
+Known commands include:
+
+```text
+BATTERY?
+CONFIG?
+BEEP
+SELFTEST
+SIZE
+GAP
+DIRECTION
+DENSITY
+CLS
+BITMAP
+PRINT
+```
+
+Most text commands are followed by CRLF:
+
+```text
+\r\n
+```
+
+The print command uses raw bitmap data after the `BITMAP` command.
+
+The default label format used by this script is:
+
+```text
 SIZE 14.0 mm,40.0 mm
 GAP 5.0 mm,0 mm
-DIRECTION 0,0
+DIRECTION 1,1
 DENSITY 15
 CLS
-BITMAP 0,0,12,284,1,?????AT???GuC??
-... [truncated]
+BITMAP 0,0,12,284,1,<raw bitmap data>
+PRINT 1
 ```
 
-It only supports a subset of TSPL2 commands like:
+The image data is 96 x 284 pixels with 1-bit color depth.
 
-- SIZE: Sets the size of the labels.
-- GAP: Sets the gap between the labels.
-- DIRECTION: Controls the print direction. In case of the P21 it doesn't seem to change anything.
-- DENSITY: Controls the print density/darkness of the print.
-- CLS: Clears the print canvas.
-- BITMAP: Prints an image and takes the parameters Xpos, YPos, height in bytes, width in dots.
-- SELFTEST: This triggers the test print, the printer generates when hitting the power button once.
-- PRINT x: Prints x copies of the label
-- BAR: prints only a completely black label
-- BARCODE: might do something, but doesn't correspond to the TSPL2 syntax. I saw it print a slightly messy black bar. I skipped all other barcode commands, after checking if QRCODE works. It doesn't.
-- INITIALPRINTER: Triggers a factory reset.
+## Difference from the original script
 
-The image format is 96x284 pixels in 1 bit color depth as raw data. Every bit is a pixel there are no checksums or error correction data.
+The original workflow required creating an RFCOMM serial device first:
 
-The printer also exposes a serial USB connection to the PC but only returns `ERROR0` on any command.
-
-Internally it uses a JieLi AC6951C (or similiar) bluetooth chip (see https://github.com/kagaimiq/jielie/pull/6).
-
-Nelkos app also uses JieLis ota update feature. It checks for updates at this url: http://app.nelko.net/api/firmware/verify with a POST request:
-
-```json
-{"hardwareName":"0.0.3","dev":"P21","firmwareName":"4.2.4"}
+```bash
+rfcomm connect /dev/rfcomm0 XX:XX:XX:XX:XX:XX
 ```
 
-There seems to be no way to get the URL for the current firmware. The app is very chatty and even sends the entire device metadata to the server. And seemingly via plain HTTP.
+This version skips that step.
+
+Old workflow:
+
+```text
+Bluetooth printer
+  -> rfcomm command
+  -> /dev/rfcomm0
+  -> pyserial
+  -> p21_print.py
+```
+
+New workflow:
+
+```text
+Bluetooth printer
+  -> Python RFCOMM socket
+  -> p21_print.py
+```
+
+This makes the script easier to use on distributions where the old `rfcomm` command is missing or deprecated.
+
+## Security and privacy note
+
+This script communicates locally with the printer over Bluetooth.
+
+No official Nelko app account is required.
+No cloud connection is required by this script.
+
+## License
+
+Use this script at your own risk.
+
+This project is based on reverse engineering of the Nelko P21 Bluetooth protocol.
+
