@@ -2,12 +2,12 @@
 
 This repository contains a reverse-engineered Python script for the Nelko P21 Bluetooth label printer.
 
-The script can print labels and read basic printer information without using the official Nelko app.
+The script can print image labels, render and print text labels, and read or change basic printer settings without using the official Nelko app.
 
 This version connects directly to the printer using a Python Bluetooth RFCOMM socket. It does **not** require:
 
 * `/dev/rfcomm0`
-* the `rfcomm` comman
+* the `rfcomm` command
 * `bluez-deprecated-tools`
 * a manually bound serial device
 
@@ -34,7 +34,7 @@ Install the Python dependencies:
 pip install -r requirements.txt
 ```
 
-If you do not use the repository requirements file, install the needed packages manually:
+For the current script, the required Python runtime packages are:
 
 ```bash
 pip install pillow packaging
@@ -130,7 +130,19 @@ Print an image:
 python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --image test-template.png
 ```
 
-Print with density and copy count:
+Print text:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --text "Hello Nelko"
+```
+
+Print text with density and copy count:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --text "Hello Nelko" --density 15 --copies 1
+```
+
+Print an image with density and copy count:
 
 ```bash
 python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --image test-template.png --density 15 --copies 1
@@ -144,12 +156,15 @@ python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --bt-channel 1 --status
 
 Channel `1` is the default and normally works for the Nelko P21.
 
+If both `--image` and `--text` are provided, the script prints both labels: first the image, then the rendered text label.
+
 ## Command line options
 
 ```text
 --bt-address   Bluetooth MAC address of the printer. Required.
 --bt-channel   Bluetooth RFCOMM channel. Default: 1.
 --image        Image file to print.
+--text         Render the given text onto a 14x40 mm label and print it.
 --density      Print density/darkness from 1 to 15. Default: 15.
 --copies       Number of copies. Default: 1.
 --status       Read printer status.
@@ -183,6 +198,26 @@ Label Type: 14x40mm(Gapped), White color
 python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --image test-template.png --debug
 ```
 
+### Print a simple text label
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --text "Storage box"
+```
+
+### Print a multi-line text label
+
+Use shell quoting that preserves line breaks, for example:
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --text $'Line 1\nLine 2'
+```
+
+### Print multiple copies of a text label
+
+```bash
+python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --text "Cable box" --copies 3
+```
+
 ### Disable beep
 
 ```bash
@@ -207,11 +242,23 @@ python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --timeout 15
 python p21_print.py --bt-address XX:XX:XX:XX:XX:XX --timeout 0
 ```
 
-## Image format
+## Image and text format
 
-The Nelko P21 uses a small monochrome print area.
+The Nelko P21 uses a small monochrome print area. The default label format used by this script is 14 x 40 mm.
 
-The script converts the input image to:
+The printer bitmap is:
+
+```text
+96 x 284 pixels
+1-bit black/white
+12 bytes per row
+284 rows
+3408 bytes total
+```
+
+### Image printing
+
+When `--image` is used, the script converts the input image to:
 
 * grayscale
 * high contrast
@@ -221,6 +268,23 @@ The script converts the input image to:
 The image is resized to fit the default 14x40 mm label format.
 
 For best results, use simple black-and-white images or high-contrast PNG files.
+
+### Text printing
+
+When `--text` is used, the script first renders the text to an internal label image and then sends it through the same bitmap print path as image printing.
+
+Text rendering uses:
+
+* 14 x 40 mm label size
+* 2 mm horizontal margin
+* 1 mm vertical margin
+* automatic font size selection
+* minimum font height of about 3 mm
+* automatic line wrapping for text wider than about 36 mm
+* centered text alignment
+* DejaVu Sans if available, otherwise Pillow's default font
+
+Very long text may become hard to read because it has to fit into the 14 x 40 mm label area.
 
 ## Troubleshooting
 
@@ -282,6 +346,16 @@ Install packaging:
 pip install packaging
 ```
 
+### Text does not use the expected font
+
+The script tries to load DejaVu Sans from common Linux font paths. If it cannot find it, it falls back to Pillow's default font.
+
+Install DejaVu fonts if you want more predictable text rendering:
+
+```bash
+sudo pacman -S ttf-dejavu
+```
+
 ### The printer prints blank labels
 
 Try a higher density:
@@ -313,6 +387,7 @@ Known commands include:
 ```text
 BATTERY?
 CONFIG?
+TIMEOUT
 BEEP
 SELFTEST
 SIZE
