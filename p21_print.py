@@ -19,7 +19,146 @@ import time
 from enum import IntEnum
 
 from packaging.version import Version
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
+
+
+LABEL_WIDTH_MM = 14.0
+LABEL_LENGTH_MM = 40.0
+LABEL_WIDTH_PX = 96
+LABEL_LENGTH_PX = 284
+PX_PER_MM_W = LABEL_LENGTH_PX / LABEL_LENGTH_MM   # along 40 mm axis
+PX_PER_MM_H = LABEL_WIDTH_PX / LABEL_WIDTH_MM     # along 14 mm axis
+
+
+def _load_font(size_px):
+    for candidate in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "DejaVuSans.ttf",
+    ):
+        try:
+            return ImageFont.truetype(candidate, size_px)
+        except (OSError, IOError):
+            continue
+    return ImageFont.load_default()
+
+
+def _line_height(font):
+    if isinstance(font, ImageFont.FreeTypeFont):
+        ascent, descent = font.getmetrics()
+        return ascent + descent
+
+    bbox = font.getbbox("Ag")
+    return bbox[3] - bbox[1]
+
+
+def _wrap_text(text, font, max_width_px, draw):
+    """Wrap text to fit max_width_px, breaking on spaces, then on chars if needed."""
+    lines = []
+
+    for paragraph in text.splitlines() or [""]:
+        words = paragraph.split(" ")
+        current = ""
+
+        for word in words:
+            candidate = word if not current else current + " " + word
+
+            if draw.textlength(candidate, font=font) <= max_width_px:
+                current = candidate
+                continue
+
+            if current:
+                lines.append(current)
+
+            # word itself too wide: break per character
+            if draw.textlength(word, font=font) > max_width_px:
+                buf = ""
+                for ch in word:
+                    if draw.textlength(buf + ch, font=font) <= max_width_px:
+                        buf += ch
+                    else:
+                        if buf:
+                            lines.append(buf)
+                        buf = ch
+                current = buf
+            else:
+                current = word
+
+        lines.append(current)
+
+    return lines
+
+
+def render_text_image(text):
+    """
+    Render `text` onto a 14x40 mm label image (284x96 px).
+
+    Constraints:
+    - 2 mm horizontal margin (left/right), 1 mm vertical margin (top/bottom)
+    - Font auto-sized to fit; minimum text height 3 mm
+    - Lines that exceed 36 mm width are wrapped
+    """
+    width_px = LABEL_LENGTH_PX
+    height_px = LABEL_WIDTH_PX
+
+    margin_x = int(round(2.0 * PX_PER_MM_W))   # ~14 px
+    margin_y = int(round(1.0 * PX_PER_MM_H))   # ~7 px
+    max_text_w = int(round(36.0 * PX_PER_MM_W))  # ~256 px
+    max_text_h = height_px - 2 * margin_y
+    min_font_px = max(1, int(round(3.0 * PX_PER_MM_H)))  # ~21 px
+
+    image = Image.new("L", (width_px, height_px), 255)
+    draw = ImageDraw.Draw(image)
+
+    text = text if text else ""
+
+    # Try font sizes from large to small; pick the largest that fits.
+    max_font_px = max_text_h
+    chosen_font = None
+    chosen_lines = None
+    chosen_metrics = None
+
+    for size in range(max_font_px, min_font_px - 1, -1):
+        font = _load_font(size)
+        lines = _wrap_text(text, font, max_text_w, draw)
+
+        line_h = _line_height(font)
+        gap = max(1, line_h // 10) if len(lines) > 1 else 0
+        total_h = line_h * len(lines) + gap * (len(lines) - 1)
+
+        widest = max(
+            (draw.textlength(line, font=font) for line in lines),
+            default=0,
+        )
+
+        if total_h <= max_text_h and widest <= max_text_w:
+            chosen_font = font
+            chosen_lines = lines
+            chosen_metrics = (line_h, gap, total_h)
+            break
+
+    if chosen_font is None:
+        chosen_font = _load_font(min_font_px)
+        chosen_lines = _wrap_text(text, chosen_font, max_text_w, draw)
+        line_h = _line_height(chosen_font)
+        gap = max(1, line_h // 10) if len(chosen_lines) > 1 else 0
+        total_h = line_h * len(chosen_lines) + gap * (len(chosen_lines) - 1)
+        chosen_metrics = (line_h, gap, total_h)
+
+    assert chosen_font is not None
+    assert chosen_lines is not None
+    assert chosen_metrics is not None
+
+    line_h, gap, total_h = chosen_metrics
+    y = margin_y + max(0, (max_text_h - total_h) // 2)
+
+    for line in chosen_lines:
+        line_w = draw.textlength(line, font=chosen_font)
+        x = margin_x + max(0, (max_text_w - int(line_w)) // 2)
+        draw.text((x, y), line, font=chosen_font, fill=0)
+        y += line_h + gap
+
+    return image
 
 
 DEBUG = False
@@ -420,7 +559,10 @@ def get_beep_command(beep):
 
 
 def load_image(image_path):
-    image = Image.open(image_path)
+    if isinstance(image_path, Image.Image):
+        image = image_path
+    else:
+        image = Image.open(image_path)
 
     image = ImageOps.grayscale(image)
     image = ImageOps.autocontrast(image)
@@ -520,6 +662,11 @@ def main():
     parser.add_argument(
         "--image",
         help="Image file to print.",
+    )
+
+    parser.add_argument(
+        "--text",
+        help="Render the given text onto a 14x40 mm label and print it.",
     )
 
     parser.add_argument(
@@ -630,6 +777,11 @@ def main():
         if args.image:
             did_something = True
             print_image(args.image, args.density, args.copies)
+
+        if args.text:
+            did_something = True
+            text_image = render_text_image(args.text)
+            print_image(text_image, args.density, args.copies)
 
         if not did_something:
             parser.print_help()
