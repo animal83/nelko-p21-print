@@ -1,4 +1,4 @@
-i# Nelko P21 label printer script
+# Nelko P21 label printer script
 
 This repository contains a reverse-engineered Python script for the Nelko P21 Bluetooth label printer.
 
@@ -53,6 +53,7 @@ sudo systemctl enable --now bluetooth
 ```
 
 ## Pair the printer
+<b>TODO: describe better</b>
 
 Turn on the Nelko P21 printer and pair it with your computer.
 
@@ -223,6 +224,7 @@ For best results, use simple black-and-white images or high-contrast PNG files.
 
 ## Troubleshooting
 
+<b>TODO: describe better</b>
 ### `Bluetooth socket error: [Errno 111] Connection refused`
 
 The printer is probably not paired, not trusted, already connected somewhere else, or the wrong RFCOMM channel is used.
@@ -345,6 +347,7 @@ PRINT 1
 The image data is 96 x 284 pixels with 1-bit color depth.
 
 ## Difference from the original script
+https://github.com/merlinschumacher/nelko-p21-print.git
 
 The original workflow required creating an RFCOMM serial device first:
 
@@ -381,7 +384,9 @@ This script communicates locally with the printer over Bluetooth.
 No official Nelko app account is required.
 No cloud connection is required by this script.
 
-## License
+##
+##
+
 
 Use this script at your own risk.
 
