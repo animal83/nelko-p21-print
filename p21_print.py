@@ -94,19 +94,21 @@ def render_text_image(text):
     Render `text` onto a 14x40 mm label image (284x96 px).
 
     Constraints:
-    - 2 mm horizontal margin (left/right), 1 mm vertical margin (top/bottom)
+    - 1 mm horizontal margin (left/right), 0 mm vertical margin (top/bottom)
     - Font auto-sized to fit; minimum text height 3 mm
-    - Lines that exceed 36 mm width are wrapped
+    - Maximum 3 text lines
+    - Lines that exceed available width are wrapped
     """
     width_px = LABEL_LENGTH_PX
     height_px = LABEL_WIDTH_PX
 
-    margin_x = int(round(2.0 * PX_PER_MM_W))   # ~14 px
-    margin_y = int(round(1.0 * PX_PER_MM_H))   # ~7 px
-    max_text_w = int(round(36.0 * PX_PER_MM_W))  # ~256 px
+    margin_x = int(round(1.0 * PX_PER_MM_W))   # ~7 px margin on left and right
+    margin_y = 0 # no vertical margin, to maximize text height
+    max_text_w = width_px - 2 * margin_x
     max_text_h = height_px - 2 * margin_y
     min_font_px = max(1, int(round(3.0 * PX_PER_MM_H)))  # ~21 px
-
+    max_lines = 3
+    
     image = Image.new("L", (width_px, height_px), 255)
     draw = ImageDraw.Draw(image)
 
@@ -121,6 +123,9 @@ def render_text_image(text):
     for size in range(max_font_px, min_font_px - 1, -1):
         font = _load_font(size)
         lines = _wrap_text(text, font, max_text_w, draw)
+
+        if len(lines) > max_lines:
+            continue
 
         line_h = _line_height(font)
         gap = max(1, line_h // 10) if len(lines) > 1 else 0
@@ -138,12 +143,15 @@ def render_text_image(text):
             break
 
     if chosen_font is None:
-        chosen_font = _load_font(min_font_px)
-        chosen_lines = _wrap_text(text, chosen_font, max_text_w, draw)
-        line_h = _line_height(chosen_font)
-        gap = max(1, line_h // 10) if len(chosen_lines) > 1 else 0
-        total_h = line_h * len(chosen_lines) + gap * (len(chosen_lines) - 1)
-        chosen_metrics = (line_h, gap, total_h)
+        min_font = _load_font(min_font_px)
+        min_font_lines = _wrap_text(text, min_font, max_text_w, draw)
+
+        if len(min_font_lines) > max_lines:
+            raise ValueError(
+                f"Text too long: requires {len(min_font_lines)} lines, maximum is {max_lines}."
+            )
+
+        raise ValueError("Text could not be fitted into label height with up to 3 lines.")
 
     assert chosen_font is not None
     assert chosen_lines is not None
